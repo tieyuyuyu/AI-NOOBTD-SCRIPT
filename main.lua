@@ -414,6 +414,11 @@ if Options.SelectedFile ~= "" then
     if isfile(p) then ActivePlan = ParseMacro(readfile(p)); CheckAbilityInPlan() end
 end
 
+-- ★ 修复跨服重开只能生效一次的问题
+if Options.AutoRejoin then
+    setupAutoRejoin()
+end
+
 -- 防掉线
 local VIM = game:GetService("VirtualInputManager")
 LocalPlayer.Idled:Connect(function()
