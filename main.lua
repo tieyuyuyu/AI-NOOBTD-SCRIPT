@@ -319,7 +319,7 @@ end
 local VIM = game:GetService("VirtualInputManager")
 LocalPlayer.Idled:Connect(function()
     pcall(function()
-        VIM:SendMouseButtonEvent(0, 0, 0, true, nil, 1)   -- 鼠标左键按下
-        VIM:SendMouseButtonEvent(0, 0, 0, false, nil, 1)  -- 鼠标左键松开
+        VIM:SendMouseButtonEvent(0, 0, 0, true, nil, 1)   
+        VIM:SendMouseButtonEvent(0, 0, 0, false, nil, 1)  
     end)
 end)
