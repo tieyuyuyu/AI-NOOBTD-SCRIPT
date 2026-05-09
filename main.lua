@@ -15,7 +15,7 @@ local Options = {
     AutoStart = false, AutoReady = false, AutoRestart = false, 
     SpeedMode = "关闭",
     Difficulty = "None", SelectedFile = "",
-    AutoRejoin = false, -- 跨服自动重开开关
+    AutoRejoin = false,
 }
 
 local SCRIPT_URL = "https://raw.githubusercontent.com/tieyuyuyu/AI-NOOBTD-SCRIPT/refs/heads/main/main.lua"
@@ -105,7 +105,7 @@ local function RefreshIDTable()
     end
 end
 
--- 5. 执行
+-- 5. 执行引擎
 local function scanAndFix()
     if not GameRunning.Value or #ActivePlan == 0 then return end
     local coins = LocalPlayer.leaderstats.Coins.Value
@@ -214,7 +214,6 @@ local MacroDropdown = TabFarm:CreateDropdown({
 TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
 TabSet:CreateToggle({Name = "自动重开", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 
--- ★ 跨服自动重开 独立开关
 TabSet:CreateToggle({
     Name = "自动执行",
     CurrentValue = Options.AutoRejoin,
@@ -224,13 +223,13 @@ TabSet:CreateToggle({
         if v then
             local ok = setupAutoRejoin()
             if ok then
-                Rayfield:Notify({Title = "自动执行", Content = "开了，重开后脚本自动执行", Duration = 3})
+                Rayfield:Notify({Title = "自动执行", Content = "开了，换服后脚本自动执行", Duration = 3})
             else
                 Rayfield:Notify({Title = "跨服重开", Content = "注入器不支持 queue_on_teleport", Duration = 5})
             end
         else
             clearAutoRejoin()
-            Rayfield:Notify({Title = "跨服重开", Content = "关了，换服后不会复活", Duration = 3})
+            Rayfield:Notify({Title = "跨服重开", Content = "关了，换服后不会执行", Duration = 3})
         end
     end,
 })
@@ -247,12 +246,11 @@ TabSet:CreateDropdown({
    Callback = function(v) Options.Difficulty = v[1] Save() end,
 })
 
--- 录制标签
 TabRec:CreateInput({Name = "录制文件名", PlaceholderText = "取个名字...", Callback = function(v) RN = v end})
 TabRec:CreateToggle({Name = "开始录制", CurrentValue = false, Callback = function(v) 
     Recording = v 
     if v then 
-        CurrentMacro = {} -- 开始录制时清空旧数据
+        CurrentMacro = {}
         Rayfield:Notify({Title = "录制", Content = "录制模式已开启", Duration = 2})
     else
         Rayfield:Notify({Title = "录制", Content = "录制模式已关闭", Duration = 2})
@@ -349,7 +347,7 @@ GameRunning.Changed:Connect(function(isRunning)
     end
 end)
 
--- 9. 录制钩子（完美修复）
+-- 9. 录制钩子（通知已补回）
 local OldNC
 OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     local Method = getnamecallmethod()
@@ -382,7 +380,7 @@ OldNC = hookmetamethod(game, "__namecall", function(self, ...)
         actionType = "升级 "..tostring(Args[1]).." (-"..cost.."钱)"
 
     elseif self.Name == "TowerAbility" then
-        result = OldNC(self, ...)  -- 关键修复：调用原函数
+        result = OldNC(self, ...)
         table.insert(CurrentMacro, {wave, 'Ability', tostring(Args[1]), 0, tostring(Args[2])})
         actionType = "技能 "..tostring(Args[2]).." (塔"..tostring(Args[1])..")"
 
@@ -390,8 +388,13 @@ OldNC = hookmetamethod(game, "__namecall", function(self, ...)
         return OldNC(self, ...)
     end
 
+    -- ★ 这里就是录制后的通知
     if actionType ~= "" then
-        Rayfield:Notify({Title = "录制中", Content = "已记录: "..actionType.." (第"..wave.."波)", Duration = 2})
+        Rayfield:Notify({
+            Title = "录制中",
+            Content = "已记录: "..actionType.." (第"..wave.."波)",
+            Duration = 2
+        })
     end
 
     -- 保存文件
