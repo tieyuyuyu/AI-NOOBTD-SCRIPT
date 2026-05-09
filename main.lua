@@ -170,7 +170,7 @@ end)
 -- 7. UI
 local Window = Rayfield:CreateWindow({
    Name = "Noob TD",
-   LoadingTitle = "正在进游戏 " .. PlayerName,
+   LoadingTitle = "正在加载 " .. PlayerName,
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -347,12 +347,15 @@ GameRunning.Changed:Connect(function(isRunning)
     end
 end)
 
--- 9. 录制钩子（通知已补回）
+-- 9. 录制钩子（通知已确保存在）
 local OldNC
 OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     local Method = getnamecallmethod()
     local Args = {...}
-    if not Recording or Method ~= "InvokeServer" then return OldNC(self, ...) end
+    
+    if not Recording or Method ~= "InvokeServer" then 
+        return OldNC(self, ...) 
+    end
 
     local wave = ReplicatedStorage.Values.Wave.Value
     local actionType = ""
@@ -362,51 +365,51 @@ OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     if self.Name == "PlaceTower" then
         local before = LocalPlayer.leaderstats.Coins.Value
         result = OldNC(self, ...)
-        task.wait(0.05)
+        task.wait(0.1)
         local after = LocalPlayer.leaderstats.Coins.Value
         cost = math.max(0, before - after)
         if cost <= 0 then cost = Args[1].cost or 0 end
+        
         table.insert(CurrentMacro, {wave, 'Place', Args[1].towerToPlace, cost, {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}})
-        actionType = "放塔 "..Args[1].towerToPlace.." (-"..cost.."钱)"
+        
+        -- 这行就是通知：录了什么塔
+        Rayfield:Notify({
+            Title = "录到操作", 
+            Content = "放塔: "..Args[1].towerToPlace.." 花费: "..cost, 
+            Duration = 2
+        })
 
     elseif self.Name == "UpgradeTower" then
         local before = LocalPlayer.leaderstats.Coins.Value
         result = OldNC(self, ...)
-        task.wait(0.05)
+        task.wait(0.1)
         local after = LocalPlayer.leaderstats.Coins.Value
         cost = math.max(0, before - after)
         if cost <= 0 then cost = 0 end
+        
         table.insert(CurrentMacro, {wave, 'Upgrade', 'Tower', cost, tostring(Args[1])})
-        actionType = "升级 "..tostring(Args[1]).." (-"..cost.."钱)"
+        
+        -- 这行就是通知：录了什么升级
+        Rayfield:Notify({
+            Title = "录到操作", 
+            Content = "升级: ID "..tostring(Args[1]).." 花费: "..cost, 
+            Duration = 2
+        })
 
     elseif self.Name == "TowerAbility" then
         result = OldNC(self, ...)
         table.insert(CurrentMacro, {wave, 'Ability', tostring(Args[1]), 0, tostring(Args[2])})
-        actionType = "技能 "..tostring(Args[2]).." (塔"..tostring(Args[1])..")"
+        
+        -- 这行就是通知：录了什么技能
+        Rayfield:Notify({
+            Title = "录到操作", 
+            Content = "技能: 塔"..tostring(Args[1]).." 用了 "..tostring(Args[2]), 
+            Duration = 2
+        })
 
     else
         return OldNC(self, ...)
     end
-
-    -- ★ 这里就是录制后的通知
-    if actionType ~= "" then
-        Rayfield:Notify({
-            Title = "录制中",
-            Content = "已记录: "..actionType.." (第"..wave.."波)",
-            Duration = 2
-        })
-    end
-
-    -- 保存文件
-    local s = "local ActionPlan = {\n"
-    for _,v in ipairs(CurrentMacro) do
-        s = s .. string.format("    {%d, '%s', '%s', %d, %s},\n", v[1], v[2], v[3], v[4],
-            type(v[5])=="table" and "Vector3.new("..v[5][1]..","..v[5][2]..","..v[5][3]..")" or "'"..v[5].."'")
-    end
-    writefile(ConfigFolder.."/"..(RN~="" and RN or "未命名")..".json", s.."}\nreturn ActionPlan")
-
-    return result or OldNC(self, ...)
-end)
 
 -- 10. 启动加载
 if Options.SelectedFile ~= "" then
