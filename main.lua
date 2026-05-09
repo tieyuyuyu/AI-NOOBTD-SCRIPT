@@ -280,27 +280,83 @@ GameRunning.Changed:Connect(function(isRunning)
 end)
 
 
+-- 9. 录制钩子（能抓到真实花费了）
 local OldNC
 OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     local Method, Args = getnamecallmethod(), {...}
     if Recording and Method == "InvokeServer" then
         local wave = ReplicatedStorage.Values.Wave.Value
         local actionType = ""
+        local cost = 0  -- 这里存花费
+
         if self.Name == "PlaceTower" then
-            table.insert(CurrentMacro, {wave, 'Place', Args[1].towerToPlace, 0, {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}})
-            actionType = "放置 "..Args[1].towerToPlace
+            -- 放塔前记一下金币
+            local beforeCoin = LocalPlayer.leaderstats.Coins.Value
+            local result = OldNC(self, ...) -- 先放
+            task.wait(0.05) -- 等金币刷新
+            local afterCoin = LocalPlayer.leaderstats.Coins.Value
+            cost = math.max(0, beforeCoin - afterCoin) -- 花了多少
+            if cost <= 0 then cost = Args[1].cost or 0 end -- 万一没抓到，用默认
+
+            table.insert(CurrentMacro, {
+                wave, 
+                'Place', 
+                Args[1].towerToPlace, 
+                cost,  -- 真实花费
+                {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}
+            })
+            actionType = "放塔 "..Args[1].towerToPlace .. " (-"..cost.."钱)"
+            return result
+
         elseif self.Name == "UpgradeTower" then
-            table.insert(CurrentMacro, {wave, 'Upgrade', 'Tower', 0, tostring(Args[1])})
-            actionType = "升级 ID:"..tostring(Args[1])
+            local beforeCoin = LocalPlayer.leaderstats.Coins.Value
+            local result = OldNC(self, ...)
+            task.wait(0.05)
+            local afterCoin = LocalPlayer.leaderstats.Coins.Value
+            cost = math.max(0, beforeCoin - afterCoin)
+            if cost <= 0 then cost = 0 end -- 升级花费默认0也可以，反正是查不到
+
+            table.insert(CurrentMacro, {
+                wave, 
+                'Upgrade', 
+                'Tower', 
+                cost,  -- 真实花费
+                tostring(Args[1])
+            })
+            actionType = "升级 "..tostring(Args[1]).." (-"..cost.."钱)"
+            return result
+
         elseif self.Name == "TowerAbility" then
-            table.insert(CurrentMacro, {wave, 'Ability', tostring(Args[1]), 0, tostring(Args[2])})
+            -- 技能不花钱，还是0
+            table.insert(CurrentMacro, {
+                wave, 
+                'Ability', 
+                tostring(Args[1]), 
+                0, 
+                tostring(Args[2])
+            })
             actionType = "技能 "..tostring(Args[2]).." (塔"..tostring(Args[1])..")"
         end
+
         if actionType ~= "" then
-            Rayfield:Notify({Title = "录制中", Content = "已记录: "..actionType.." (波次 "..wave..")", Duration = 2})
+            Rayfield:Notify({
+                Title = "录制中", 
+                Content = "已记录: "..actionType.." (第"..wave.."波)", 
+                Duration = 2
+            })
         end
+
+        -- 写入文件
         local s = "local ActionPlan = {\n"
-        for _,v in ipairs(CurrentMacro) do s = s .. string.format("    {%d, '%s', '%s', %d, %s},\n", v[1], v[2], v[3], v[4], type(v[5])=="table" and "Vector3.new("..v[5][1]..","..v[5][2]..","..v[5][3]..")" or "'"..v[5].."'") end
+        for _,v in ipairs(CurrentMacro) do 
+            s = s .. string.format(
+                "    {%d, '%s', '%s', %d, %s},\n", 
+                v[1], v[2], v[3], v[4], 
+                type(v[5])=="table" and 
+                    "Vector3.new("..v[5][1]..","..v[5][2]..","..v[5][3]..")" 
+                    or "'"..v[5].."'"
+            )
+        end
         writefile(ConfigFolder.."/"..(RN~="" and RN or "未命名")..".json", s.."}\nreturn ActionPlan")
     end
     return OldNC(self, ...)
