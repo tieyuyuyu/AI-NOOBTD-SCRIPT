@@ -2,9 +2,9 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = game:GetService("Players").LocalPlayer
-local VirtualUser = game:GetService("VirtualUser")
+local VirtualUser = game:GetService("VirtualUser")  
 
--- 1. 【账户隔离与路径】
+
 local PlayerName = LocalPlayer.Name
 local ConfigFolder = "NoobTD_Configs/" .. PlayerName
 local SettingsFile = ConfigFolder .. "/AccountSettings.json"
@@ -18,23 +18,23 @@ local Options = {
     Difficulty = "None", SelectedFile = "" 
 }
 
--- 2. 【保存/读取配置】
+
 local function Save() writefile(SettingsFile, HttpService:JSONEncode(Options)) end
 if isfile(SettingsFile) then
     local ok, data = pcall(function() return HttpService:JSONDecode(readfile(SettingsFile)) end)
     if ok then for k,v in pairs(data) do Options[k] = v end end
 end
 
--- 3. 【核心变量】
+
 local GameRunning = ReplicatedStorage.Values.GameRunning
 local ID_Table, SuccessBook, ActivePlan = {}, {}, {}
 local Recording, CurrentMacro, RN = false, {}, ""
 local PreparationDone = false
 local AbilityTimer = 0
 local SelectedRecFile = ""
-local HasAbilityInPlan = false  -- 标记宏中是否包含 Ability 指令
+local HasAbilityInPlan = false
 
--- 4. 【解析器与工具】
+
 local function ParseMacro(content)
     local body = content:gsub("local%s+ActionPlan%s*=%s*", ""):gsub("return%s+ActionPlan", "")
     body = body:match("^%s*(.*)%s*$")
@@ -50,7 +50,6 @@ local function ParseMacro(content)
     return tryLoad(body) or tryLoad("{" .. body .. "}") or {}
 end
 
--- 检查宏中是否有技能指令
 local function CheckAbilityInPlan()
     HasAbilityInPlan = false
     for _, data in ipairs(ActivePlan) do
@@ -73,7 +72,7 @@ local function RefreshIDTable()
     end
 end
 
--- 5. 【执行引擎：完整支持 Place / Upgrade / Ability】
+
 local function scanAndFix()
     if not GameRunning.Value or #ActivePlan == 0 then return end
     local coins = LocalPlayer.leaderstats.Coins.Value
@@ -117,7 +116,7 @@ local function scanAndFix()
     end
 end
 
--- 6. 【自动技能循环：仅当宏包含 Ability 时才运行】
+
 task.spawn(function()
     while true do
         if GameRunning.Value and Options.AutoStart and HasAbilityInPlan then
@@ -135,14 +134,14 @@ task.spawn(function()
     end
 end)
 
--- 7. 【UI 构建】
+
 local Window = Rayfield:CreateWindow({
    Name = "Noob TD",
    LoadingTitle = "正在载入账户: " .. PlayerName,
    ConfigurationSaving = { Enabled = false }
 })
 
-local TabFarm = Window:CreateTab("挂机页面", 4483362458)
+local TabFarm = Window:CreateTab("自动操作页面", 4483362458)
 local TabSet = Window:CreateTab("自动化", 4483362458)
 local TabRec = Window:CreateTab("录制", 4483362458)
 
@@ -172,22 +171,21 @@ local MacroDropdown = TabFarm:CreateDropdown({
       if isfile(p) then 
          ActivePlan = ParseMacro(readfile(p))
          SuccessBook = {}
-         CheckAbilityInPlan()  -- 更新技能标记
+         CheckAbilityInPlan()
          RefreshIDTable()
          Rayfield:Notify({Title = "宏已就绪", Content = "已加载 "..#ActivePlan.." 条指令", Duration = 3})
       end
    end,
 })
 
-TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
-TabSet:CreateToggle({Name = "自动重开", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
+TabSet:CreateToggle({Name = "自动准备 (每局触发)", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
+TabSet:CreateToggle({Name = "自动重开 (Replay)", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 TabSet:CreateToggle({Name = "自动二倍速", CurrentValue = Options.AutoSpeed, Callback = function(v) Options.AutoSpeed = v Save() end})
 TabSet:CreateDropdown({
    Name = "预设难度", Options = {"None", "Easy", "Medium", "Hard", "Extreme"}, CurrentOption = {Options.Difficulty},
    Callback = function(v) Options.Difficulty = v[1] Save() end,
 })
 
--- 录制标签页内容
 TabRec:CreateInput({Name = "文件名", PlaceholderText = "输入名称...", Callback = function(v) RN = v end})
 TabRec:CreateToggle({Name = "🔴 录制模式", CurrentValue = false, Callback = function(v) Recording = v end})
 
@@ -226,7 +224,7 @@ TabRec:CreateButton({
     end,
 })
 
--- 8. 【核心生命周期：全自动循环】
+
 task.spawn(function()
     while true do
         task.wait(1)
@@ -268,20 +266,20 @@ task.spawn(function()
     end
 end)
 
--- 结算与重开逻辑（等待时间改为 8 秒）
+
 GameRunning.Changed:Connect(function(isRunning)
     if not isRunning then
         SuccessBook = {}
         PreparationDone = false
         if Options.AutoRestart then
             Rayfield:Notify({Title = "结算", Content = "8秒后自动 Replay 重开", Duration = 5})
-            task.wait(8)  -- 改为 8 秒
+            task.wait(8)
             pcall(function() ReplicatedStorage.Remotes.Events.Replay:FireServer() end)
         end
     end
 end)
 
--- 9. 【录制逻辑（支持 Place / Upgrade / Ability，带通知）】
+
 local OldNC
 OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     local Method, Args = getnamecallmethod(), {...}
@@ -308,7 +306,7 @@ OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     return OldNC(self, ...)
 end)
 
--- 10. 启动自动加载
+
 if Options.SelectedFile ~= "" then
     local p = ConfigFolder.."/"..Options.SelectedFile..".json"
     if isfile(p) then
@@ -317,4 +315,11 @@ if Options.SelectedFile ~= "" then
     end
 end
 
-LocalPlayer.Idled:Connect(function() VirtualUser:CaptureController():ClickButton2(Vector2.new(0,0)) end)
+
+local VIM = game:GetService("VirtualInputManager")
+LocalPlayer.Idled:Connect(function()
+    pcall(function()
+        VIM:SendMouseButtonEvent(0, 0, 0, true, nil, 1)   -- 鼠标左键按下
+        VIM:SendMouseButtonEvent(0, 0, 0, false, nil, 1)  -- 鼠标左键松开
+    end)
+end)
