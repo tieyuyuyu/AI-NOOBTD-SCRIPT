@@ -31,7 +31,8 @@ local ID_Table, SuccessBook, ActivePlan = {}, {}, {}
 local Recording, CurrentMacro, RN = false, {}, ""
 local PreparationDone = false
 local AbilityTimer = 0
-local SelectedRecFile = ""  -- 用于删除功能的选中文件
+local SelectedRecFile = ""
+local HasAbilityInPlan = false  -- 标记宏中是否包含 Ability 指令
 
 -- 4. 【解析器与工具】
 local function ParseMacro(content)
@@ -47,6 +48,17 @@ local function ParseMacro(content)
         return nil
     end
     return tryLoad(body) or tryLoad("{" .. body .. "}") or {}
+end
+
+-- 检查宏中是否有技能指令
+local function CheckAbilityInPlan()
+    HasAbilityInPlan = false
+    for _, data in ipairs(ActivePlan) do
+        if data[2] == "Ability" then
+            HasAbilityInPlan = true
+            break
+        end
+    end
 end
 
 local function RefreshIDTable()
@@ -105,10 +117,10 @@ local function scanAndFix()
     end
 end
 
--- 6. 【自动技能循环：每 31 秒释放一次】
+-- 6. 【自动技能循环：仅当宏包含 Ability 时才运行】
 task.spawn(function()
     while true do
-        if GameRunning.Value and Options.AutoStart then
+        if GameRunning.Value and Options.AutoStart and HasAbilityInPlan then
             if tick() - AbilityTimer >= 31 then
                 pcall(function()
                     ReplicatedStorage.Remotes.Functions.TowerAbility:InvokeServer("1", "Rage")
@@ -125,16 +137,15 @@ end)
 
 -- 7. 【UI 构建】
 local Window = Rayfield:CreateWindow({
-   Name = "Noob TD Master 💎 自动循环版",
+   Name = "Noob TD",
    LoadingTitle = "正在载入账户: " .. PlayerName,
    ConfigurationSaving = { Enabled = false }
 })
 
-local TabFarm = Window:CreateTab("挂机执行", 4483362458)
-local TabSet = Window:CreateTab("自动化开关", 4483362458)
-local TabRec = Window:CreateTab("录制宏", 4483362458)
+local TabFarm = Window:CreateTab("挂机页面", 4483362458)
+local TabSet = Window:CreateTab("自动化", 4483362458)
+local TabRec = Window:CreateTab("录制", 4483362458)
 
--- 获取录制文件列表函数（排除 AccountSettings.json）
 local function GetRecFiles()
     local files = {}
     for _, f in ipairs(listfiles(ConfigFolder)) do
@@ -161,14 +172,15 @@ local MacroDropdown = TabFarm:CreateDropdown({
       if isfile(p) then 
          ActivePlan = ParseMacro(readfile(p))
          SuccessBook = {}
+         CheckAbilityInPlan()  -- 更新技能标记
          RefreshIDTable()
          Rayfield:Notify({Title = "宏已就绪", Content = "已加载 "..#ActivePlan.." 条指令", Duration = 3})
       end
    end,
 })
 
-TabSet:CreateToggle({Name = "自动准备 (每局触发)", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
-TabSet:CreateToggle({Name = "自动重开 (Replay)", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
+TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
+TabSet:CreateToggle({Name = "自动重开", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 TabSet:CreateToggle({Name = "自动二倍速", CurrentValue = Options.AutoSpeed, Callback = function(v) Options.AutoSpeed = v Save() end})
 TabSet:CreateDropdown({
    Name = "预设难度", Options = {"None", "Easy", "Medium", "Hard", "Extreme"}, CurrentOption = {Options.Difficulty},
@@ -179,7 +191,6 @@ TabSet:CreateDropdown({
 TabRec:CreateInput({Name = "文件名", PlaceholderText = "输入名称...", Callback = function(v) RN = v end})
 TabRec:CreateToggle({Name = "🔴 录制模式", CurrentValue = false, Callback = function(v) Recording = v end})
 
--- 删除文件 Dropdown & Button
 local RecFileDropdown = TabRec:CreateDropdown({
     Name = "选择要删除的录制文件",
     Options = GetRecFiles(),
@@ -201,11 +212,11 @@ TabRec:CreateButton({
             SelectedRecFile = ""
             local newFiles = GetRecFiles()
             RecFileDropdown:Set(newFiles)
-            -- 如果当前加载的宏正是被删除的，则清除活动宏
             if Options.SelectedFile == SelectedRecFile then
                 Options.SelectedFile = ""
                 ActivePlan = {}
                 SuccessBook = {}
+                HasAbilityInPlan = false
                 Save()
                 Rayfield:Notify({Title = "提示", Content = "已删除当前加载的宏，请重新选择", Duration = 3})
             end
@@ -257,14 +268,14 @@ task.spawn(function()
     end
 end)
 
--- 结算与重开逻辑
+-- 结算与重开逻辑（等待时间改为 8 秒）
 GameRunning.Changed:Connect(function(isRunning)
     if not isRunning then
         SuccessBook = {}
         PreparationDone = false
         if Options.AutoRestart then
-            Rayfield:Notify({Title = "结算", Content = "15秒后自动 Replay 重开", Duration = 5})
-            task.wait(15)
+            Rayfield:Notify({Title = "结算", Content = "8秒后自动 Replay 重开", Duration = 5})
+            task.wait(8)  -- 改为 8 秒
             pcall(function() ReplicatedStorage.Remotes.Events.Replay:FireServer() end)
         end
     end
@@ -300,7 +311,10 @@ end)
 -- 10. 启动自动加载
 if Options.SelectedFile ~= "" then
     local p = ConfigFolder.."/"..Options.SelectedFile..".json"
-    if isfile(p) then ActivePlan = ParseMacro(readfile(p)) end
+    if isfile(p) then
+        ActivePlan = ParseMacro(readfile(p))
+        CheckAbilityInPlan()
+    end
 end
 
 LocalPlayer.Idled:Connect(function() VirtualUser:CaptureController():ClickButton2(Vector2.new(0,0)) end)
