@@ -13,9 +13,13 @@ if not isfolder(ConfigFolder) then makefolder(ConfigFolder) end
 
 local Options = { 
     AutoStart = false, AutoReady = false, AutoRestart = false, 
-    SpeedMode = "二倍速",   -- 新：关闭 / 二倍速 / 三倍速
-    Difficulty = "None", SelectedFile = "" 
+    SpeedMode = "关闭",   -- 关闭 / 二倍速 / 三倍速
+    Difficulty = "None", SelectedFile = "",
+    AutoRejoin = false, -- 跨服自动重开开关
 }
+
+-- 脚本自己的直链，自动执行全靠它
+local SCRIPT_URL = "https://raw.githubusercontent.com/tieyuyuyu/AI-NOOBTD-SCRIPT/refs/heads/main/main.lua"
 
 -- 2. 保存和读取（兼容旧版 AutoSpeed）
 local function Save() writefile(SettingsFile, HttpService:JSONEncode(Options)) end
@@ -24,7 +28,6 @@ if isfile(SettingsFile) then
     if ok then 
         for k,v in pairs(data) do 
             if k == "AutoSpeed" then
-                -- 旧版布尔值 → 新版速模式
                 if v == true then Options.SpeedMode = "二倍速" else Options.SpeedMode = "关闭" end
             else
                 Options[k] = v 
@@ -41,6 +44,34 @@ local PreparationDone = false
 local AbilityTimer = 0
 local SelectedRecFile = ""
 local HasAbilityInPlan = false
+
+-- 跨服复活相关函数
+local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
+local clearteleportqueue = clearteleportqueue or (syn and syn.clearteleportqueue)
+
+local function setupAutoRejoin()
+    if not queue_on_teleport then return false end
+    if not Options.AutoRejoin then return false end
+
+    local reloadCode = string.format([[
+        if not game:IsLoaded() then game.Loaded:Wait() end
+        local success, err = pcall(function()
+            loadstring(game:HttpGet('%s'))()
+        end)
+        if not success then
+            warn("NoobTD 自动执行失败: " .. tostring(err))
+        end
+    ]], SCRIPT_URL)
+
+    queue_on_teleport(reloadCode)
+    return true
+end
+
+local function clearAutoRejoin()
+    if not clearteleportqueue then return false end
+    clearteleportqueue()
+    return true
+end
 
 -- 4. 宏解析
 local function ParseMacro(content)
@@ -189,7 +220,27 @@ local MacroDropdown = TabFarm:CreateDropdown({
 TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
 TabSet:CreateToggle({Name = "自动重开", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 
--- ★ 倍速改成下拉
+-- 跨服自动重开开关
+TabSet:CreateToggle({
+    Name = "自动执行",
+    CurrentValue = Options.AutoRejoin,
+    Callback = function(v)
+        Options.AutoRejoin = v
+        Save()
+        if v then
+            local ok = setupAutoRejoin()
+            if ok then
+                Rayfield:Notify({Title = "自动执行", Content = "可以全自动挂机了", Duration = 3})
+            else
+                Rayfield:Notify({Title = "自动执行", Content = "注入器不支持 queue_on_teleport，用不了", Duration = 5})
+            end
+        else
+            clearAutoRejoin()
+            Rayfield:Notify({Title = "跨服重开", Content = "关了", Duration = 3})
+        end
+    end,
+})
+
 TabSet:CreateDropdown({
     Name = "倍速",
     Options = {"关闭", "二倍速", "三倍速"},
@@ -266,12 +317,11 @@ task.spawn(function()
             if PreparationDone then
                 Rayfield:Notify({Title = "游戏状态", Content = "开始了，正在配置...", Duration = 3})
                 task.wait(2)
-                -- 根据倍速模式发送远程
                 local speedParam = nil
                 if Options.SpeedMode == "二倍速" then
                     speedParam = 1
                 elseif Options.SpeedMode == "三倍速" then
-                    speedParam = 2  -- 假设2代表三倍速，如果游戏实际参数不同请修改这里
+                    speedParam = 2
                 end
                 if speedParam then
                     pcall(function() ReplicatedStorage.Remotes.Events.InitChangeSpeed:FireServer(speedParam) end)
@@ -302,83 +352,94 @@ GameRunning.Changed:Connect(function(isRunning)
     end
 end)
 
--- 9. 录制钩子（已带真实花费）
+-- 9. 录制钩子（已修复技能调用 + 真实花费）
 local OldNC
 OldNC = hookmetamethod(game, "__namecall", function(self, ...)
-    local Method, Args = getnamecallmethod(), {...}
-    if Recording and Method == "InvokeServer" then
-        local wave = ReplicatedStorage.Values.Wave.Value
-        local actionType = ""
-        local cost = 0
+    local Method = getnamecallmethod()
+    local Args = {...}
 
-        if self.Name == "PlaceTower" then
-            local beforeCoin = LocalPlayer.leaderstats.Coins.Value
-            local result = OldNC(self, ...)
-            task.wait(0.05)
-            local afterCoin = LocalPlayer.leaderstats.Coins.Value
-            cost = math.max(0, beforeCoin - afterCoin)
-            if cost <= 0 then cost = Args[1].cost or 0 end
-
-            table.insert(CurrentMacro, {
-                wave, 
-                'Place', 
-                Args[1].towerToPlace, 
-                cost,
-                {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}
-            })
-            actionType = "放塔 "..Args[1].towerToPlace .. " (-"..cost.."钱)"
-            return result
-
-        elseif self.Name == "UpgradeTower" then
-            local beforeCoin = LocalPlayer.leaderstats.Coins.Value
-            local result = OldNC(self, ...)
-            task.wait(0.05)
-            local afterCoin = LocalPlayer.leaderstats.Coins.Value
-            cost = math.max(0, beforeCoin - afterCoin)
-            if cost <= 0 then cost = 0 end
-
-            table.insert(CurrentMacro, {
-                wave, 
-                'Upgrade', 
-                'Tower', 
-                cost,
-                tostring(Args[1])
-            })
-            actionType = "升级 "..tostring(Args[1]).." (-"..cost.."钱)"
-            return result
-
-        elseif self.Name == "TowerAbility" then
-            table.insert(CurrentMacro, {
-                wave, 
-                'Ability', 
-                tostring(Args[1]), 
-                0, 
-                tostring(Args[2])
-            })
-            actionType = "技能 "..tostring(Args[2]).." (塔"..tostring(Args[1])..")"
-        end
-
-        if actionType ~= "" then
-            Rayfield:Notify({
-                Title = "录制中", 
-                Content = "已记录: "..actionType.." (第"..wave.."波)", 
-                Duration = 2
-            })
-        end
-
-        local s = "local ActionPlan = {\n"
-        for _,v in ipairs(CurrentMacro) do 
-            s = s .. string.format(
-                "    {%d, '%s', '%s', %d, %s},\n", 
-                v[1], v[2], v[3], v[4], 
-                type(v[5])=="table" and 
-                    "Vector3.new("..v[5][1]..","..v[5][2]..","..v[5][3]..")" 
-                    or "'"..v[5].."'"
-            )
-        end
-        writefile(ConfigFolder.."/"..(RN~="" and RN or "未命名")..".json", s.."}\nreturn ActionPlan")
+    if not Recording or Method ~= "InvokeServer" then
+        return OldNC(self, ...)
     end
-    return OldNC(self, ...)
+
+    local wave = ReplicatedStorage.Values.Wave.Value
+    local actionType = ""
+    local cost = 0
+    local result
+
+    -- 放塔
+    if self.Name == "PlaceTower" then
+        local beforeCoin = LocalPlayer.leaderstats.Coins.Value
+        result = OldNC(self, ...)
+        task.wait(0.05)
+        local afterCoin = LocalPlayer.leaderstats.Coins.Value
+        cost = math.max(0, beforeCoin - afterCoin)
+        if cost <= 0 then cost = Args[1].cost or 0 end
+
+        table.insert(CurrentMacro, {
+            wave,
+            'Place',
+            Args[1].towerToPlace,
+            cost,
+            {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}
+        })
+        actionType = "放塔 "..Args[1].towerToPlace .. " (-"..cost.."钱)"
+
+    -- 升级
+    elseif self.Name == "UpgradeTower" then
+        local beforeCoin = LocalPlayer.leaderstats.Coins.Value
+        result = OldNC(self, ...)
+        task.wait(0.05)
+        local afterCoin = LocalPlayer.leaderstats.Coins.Value
+        cost = math.max(0, beforeCoin - afterCoin)
+        if cost <= 0 then cost = 0 end
+
+        table.insert(CurrentMacro, {
+            wave,
+            'Upgrade',
+            'Tower',
+            cost,
+            tostring(Args[1])
+        })
+        actionType = "升级 "..tostring(Args[1]).." (-"..cost.."钱)"
+
+    -- 技能（原来这里掉坑了，现在补上）
+    elseif self.Name == "TowerAbility" then
+        result = OldNC(self, ...)
+        table.insert(CurrentMacro, {
+            wave,
+            'Ability',
+            tostring(Args[1]),
+            0,
+            tostring(Args[2])
+        })
+        actionType = "技能 "..tostring(Args[2]).." (塔"..tostring(Args[1])..")"
+    else
+        return OldNC(self, ...)
+    end
+
+    -- 通知和存文件
+    if actionType ~= "" then
+        Rayfield:Notify({
+            Title = "录制中",
+            Content = "已记录: "..actionType.." (第"..wave.."波)",
+            Duration = 2
+        })
+    end
+
+    local s = "local ActionPlan = {\n"
+    for _,v in ipairs(CurrentMacro) do
+        s = s .. string.format(
+            "    {%d, '%s', '%s', %d, %s},\n",
+            v[1], v[2], v[3], v[4],
+            type(v[5])=="table" and
+                "Vector3.new("..v[5][1]..","..v[5][2]..","..v[5][3]..")"
+                or "'"..v[5].."'"
+        )
+    end
+    writefile(ConfigFolder.."/"..(RN~="" and RN or "未命名")..".json", s.."}\nreturn ActionPlan")
+
+    return result or OldNC(self, ...)
 end)
 
 -- 10. 启动加载
