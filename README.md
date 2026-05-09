@@ -6,6 +6,6 @@ loadstring(game:HttpGet('https://raw.githubusercontent.com/tieyuyuyu/AI-NOOBTD-S
 把需要用的塔锁定住就行了
 # 视频教程
  https://b23.tv/6G5cQYj
-# 配置分享 目前有0个配置
+# 配置分享 目前有1个配置
 discord.gg/qREtUQCKZ9
 # ！！！禁止2次加密倒卖！！！
