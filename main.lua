@@ -1,4 +1,8 @@
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local RayfieldSuccess, Rayfield = pcall(function()
+    local response = game:HttpGet('https://sirius.menu/rayfield')
+    return loadstring(response)()
+end)
+if not RayfieldSuccess then error("UI库加载失败，请检查网络或换备用链接") end
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local LocalPlayer = game:GetService("Players").LocalPlayer
