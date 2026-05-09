@@ -13,7 +13,7 @@ if not isfolder(ConfigFolder) then makefolder(ConfigFolder) end
 
 local Options = { 
     AutoStart = false, AutoReady = false, AutoRestart = false, 
-    SpeedMode = "关闭",
+    SpeedMode = "二倍速",
     Difficulty = "None", SelectedFile = "",
     AutoRejoin = false,
 }
