@@ -57,7 +57,7 @@ local function setupAutoRejoin()
         local success, err = pcall(function()
             loadstring(game:HttpGet('%s'))()
         end)
-        if not success then warn("NoobTD 复活失败: " .. tostring(err)) end
+        if not success then warn("NoobTD 执行失败: " .. tostring(err)) end
     ]], SCRIPT_URL)
 
     queue_on_teleport(reloadCode)
@@ -215,7 +215,7 @@ TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Ca
 TabSet:CreateToggle({Name = "自动重开", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 
 TabSet:CreateToggle({
-    Name = "跨服自动重开",
+    Name = "自动执行",
     CurrentValue = Options.AutoRejoin,
     Callback = function(v)
         Options.AutoRejoin = v
@@ -223,13 +223,13 @@ TabSet:CreateToggle({
         if v then
             local ok = setupAutoRejoin()
             if ok then
-                Rayfield:Notify({Title = "跨服重开", Content = "开了，换服后脚本自动复活", Duration = 3})
+                Rayfield:Notify({Title = "自动执行", Content = "开了，换服后脚本自动执行", Duration = 3})
             else
-                Rayfield:Notify({Title = "跨服重开", Content = "注入器不支持 queue_on_teleport", Duration = 5})
+                Rayfield:Notify({Title = "自动执行", Content = "注入器不支持 queue_on_teleport", Duration = 5})
             end
         else
             clearAutoRejoin()
-            Rayfield:Notify({Title = "跨服重开", Content = "关了，换服后不会复活", Duration = 3})
+            Rayfield:Notify({Title = "跨服重开", Content = "关了，换服后不会执行", Duration = 3})
         end
     end,
 })
