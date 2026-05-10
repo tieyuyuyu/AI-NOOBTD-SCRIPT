@@ -237,7 +237,7 @@ local MacroDropdown = TabFarm:CreateDropdown({
 })
 
 TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
-TabSet:CreateToggle({Name = "自动执行", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
+TabSet:CreateToggle({Name = "自动重新开始", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 
 TabSet:CreateToggle({
     Name = "自动执行",
