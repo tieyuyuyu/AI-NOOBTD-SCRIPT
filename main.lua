@@ -16,6 +16,7 @@ local Options = {
     SpeedMode = "二倍速",
     Difficulty = "None", SelectedFile = "",
     AutoRejoin = false,
+    SkipFirst10 = false,
 }
 
 local SCRIPT_URL = "https://raw.githubusercontent.com/tieyuyuyu/AI-NOOBTD-SCRIPT/refs/heads/main/main.lua"
@@ -40,9 +41,12 @@ local GameRunning = ReplicatedStorage.Values.GameRunning
 local ID_Table, SuccessBook, ActivePlan = {}, {}, {}
 local Recording, CurrentMacro, RN = false, {}, ""
 local PreparationDone = false
-local AbilityTimer = 0
 local SelectedRecFile = ""
 local HasAbilityInPlan = false
+local lastSkipTime = 0
+
+-- ★ 技能循环表：{ ["塔编号_技能名"] = 上次释放时间 }
+local AbilityTimers = {}
 
 -- 跨服函数
 local queue_on_teleport = queue_on_teleport or (syn and syn.queue_on_teleport)
@@ -137,10 +141,19 @@ local function scanAndFix()
                 Rayfield:Notify({Title = "升级", Content = "升级完成，编号: "..tostring(extra), Duration = 2})
                 success = true
             elseif action == "Ability" then
+                local towerId = tostring(name)
+                local abilityName = tostring(extra)
+                local key = towerId .. "_" .. abilityName
+                
                 pcall(function()
-                    ReplicatedStorage.Remotes.Functions.TowerAbility:InvokeServer(tostring(name), tostring(extra))
+                    ReplicatedStorage.Remotes.Functions.TowerAbility:InvokeServer(towerId, abilityName)
                 end)
-                Rayfield:Notify({Title = "技能", Content = "塔"..tostring(name).." 用了 "..tostring(extra), Duration = 2})
+                Rayfield:Notify({Title = "技能", Content = "塔"..towerId.." 用了 "..abilityName, Duration = 2})
+                
+                -- 记录该技能到循环表，初始时间设为现在（让它立刻开始计时）
+                if not AbilityTimers[key] then
+                    AbilityTimers[key] = tick()
+                end
                 success = true
             end
             if success then SuccessBook[i] = true task.wait(0.3) end
@@ -149,19 +162,30 @@ local function scanAndFix()
     end
 end
 
--- 6. 自动技能
+-- 6. ★ 自动技能循环（独立计时所有已触发的技能）
 task.spawn(function()
     while true do
         if GameRunning.Value and Options.AutoStart and HasAbilityInPlan then
-            if tick() - AbilityTimer >= 31 then
-                pcall(function()
-                    ReplicatedStorage.Remotes.Functions.TowerAbility:InvokeServer("1", "Rage")
-                end)
-                Rayfield:Notify({Title = "自动技能", Content = "Rage 已用 (塔1)", Duration = 2})
-                AbilityTimer = tick()
+            local now = tick()
+            for key, lastTime in pairs(AbilityTimers) do
+                if now - lastTime >= 31 then
+                    -- 解析塔编号和技能名
+                    local sepPos = key:find("_")
+                    if sepPos then
+                        local towerId = key:sub(1, sepPos - 1)
+                        local abilityName = key:sub(sepPos + 1)
+                        pcall(function()
+                            ReplicatedStorage.Remotes.Functions.TowerAbility:InvokeServer(towerId, abilityName)
+                        end)
+                        Rayfield:Notify({
+                            Title = "自动技能", 
+                            Content = "塔"..towerId.." 用了 "..abilityName, 
+                            Duration = 2
+                        })
+                        AbilityTimers[key] = now
+                    end
+                end
             end
-        else
-            AbilityTimer = tick()
         end
         task.wait(1)
     end
@@ -170,7 +194,7 @@ end)
 -- 7. UI
 local Window = Rayfield:CreateWindow({
    Name = "Noob TD",
-   LoadingTitle = "正在进游戏 " .. PlayerName,
+   LoadingTitle = "正在加载 " .. PlayerName,
    ConfigurationSaving = { Enabled = false }
 })
 
@@ -204,6 +228,7 @@ local MacroDropdown = TabFarm:CreateDropdown({
       if isfile(p) then 
          ActivePlan = ParseMacro(readfile(p))
          SuccessBook = {}
+         AbilityTimers = {} -- 重置技能计时
          CheckAbilityInPlan()
          RefreshIDTable()
          Rayfield:Notify({Title = "方案已加载", Content = "一共 "..#ActivePlan.." 步", Duration = 3})
@@ -212,7 +237,7 @@ local MacroDropdown = TabFarm:CreateDropdown({
 })
 
 TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Callback = function(v) Options.AutoReady = v Save() end})
-TabSet:CreateToggle({Name = "自动重开", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
+TabSet:CreateToggle({Name = "自动执行", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 
 TabSet:CreateToggle({
     Name = "自动执行",
@@ -229,7 +254,7 @@ TabSet:CreateToggle({
             end
         else
             clearAutoRejoin()
-            Rayfield:Notify({Title = "跨服重开", Content = "关了，换服后不会执行", Duration = 3})
+            Rayfield:Notify({Title = "自动执行", Content = "关了，换服后不会复执行", Duration = 3})
         end
     end,
 })
@@ -244,6 +269,12 @@ TabSet:CreateDropdown({
 TabSet:CreateDropdown({
    Name = "难度", Options = {"None", "Easy", "Medium", "Hard", "Extreme"}, CurrentOption = {Options.Difficulty},
    Callback = function(v) Options.Difficulty = v[1] Save() end,
+})
+
+TabSet:CreateToggle({
+    Name = "前8波自动跳过",
+    CurrentValue = Options.SkipFirst10,
+    Callback = function(v) Options.SkipFirst10 = v Save() end,
 })
 
 TabRec:CreateInput({Name = "录制文件名", PlaceholderText = "取个名字...", Callback = function(v) RN = v end})
@@ -283,6 +314,7 @@ TabRec:CreateButton({
                 ActivePlan = {}
                 SuccessBook = {}
                 HasAbilityInPlan = false
+                AbilityTimers = {}
                 Save()
                 Rayfield:Notify({Title = "提醒", Content = "刚才加载的方案被删了，重新选", Duration = 3})
             end
@@ -327,9 +359,20 @@ task.spawn(function()
                 end
                 RefreshIDTable()
                 PreparationDone = false
-                AbilityTimer = tick()
+                AbilityTimers = {} -- 新游戏重置技能计时
+                lastSkipTime = tick()
             end
+            
             if Options.AutoStart then scanAndFix() end
+            
+            -- 前8波跳过（每10秒）
+            if Options.AutoStart and Options.SkipFirst10 then
+                local wave = ReplicatedStorage.Values.Wave.Value
+                if wave <= 8 and tick() - lastSkipTime >= 10 then
+                    lastSkipTime = tick()
+                    pcall(function() ReplicatedStorage.Remotes.Events.SkipWave:FireServer() end)
+                end
+            end
         end
     end
 end)
@@ -339,6 +382,8 @@ GameRunning.Changed:Connect(function(isRunning)
     if not isRunning then
         SuccessBook = {}
         PreparationDone = false
+        AbilityTimers = {} -- 重置技能循环
+        lastSkipTime = 0
         if Options.AutoRestart then
             Rayfield:Notify({Title = "结算", Content = "8秒后重开", Duration = 5})
             task.wait(8)
@@ -347,7 +392,7 @@ GameRunning.Changed:Connect(function(isRunning)
     end
 end)
 
--- 9. 录制钩子（通知已补回）
+-- 9. 录制钩子（坐标两位小数，通知依旧）
 local OldNC
 OldNC = hookmetamethod(game, "__namecall", function(self, ...)
     local Method = getnamecallmethod()
@@ -366,7 +411,10 @@ OldNC = hookmetamethod(game, "__namecall", function(self, ...)
         local after = LocalPlayer.leaderstats.Coins.Value
         cost = math.max(0, before - after)
         if cost <= 0 then cost = Args[1].cost or 0 end
-        table.insert(CurrentMacro, {wave, 'Place', Args[1].towerToPlace, cost, {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}})
+        table.insert(CurrentMacro, {
+            wave, 'Place', Args[1].towerToPlace, cost,
+            {Args[1].position.X, Args[1].position.Y, Args[1].position.Z}
+        })
         actionType = "放塔 "..Args[1].towerToPlace.." (-"..cost.."钱)"
 
     elseif self.Name == "UpgradeTower" then
@@ -383,27 +431,27 @@ OldNC = hookmetamethod(game, "__namecall", function(self, ...)
         result = OldNC(self, ...)
         table.insert(CurrentMacro, {wave, 'Ability', tostring(Args[1]), 0, tostring(Args[2])})
         actionType = "技能 "..tostring(Args[2]).." (塔"..tostring(Args[1])..")"
-
     else
         return OldNC(self, ...)
     end
 
-    -- ★ 这里就是录制后的通知
     if actionType ~= "" then
-        Rayfield:Notify({
-            Title = "录制中",
-            Content = "已记录: "..actionType.." (第"..wave.."波)",
-            Duration = 2
-        })
+        Rayfield:Notify({Title = "录制中", Content = "已记录: "..actionType.." (第"..wave.."波)", Duration = 2})
     end
 
-    -- 保存文件
     local s = "local ActionPlan = {\n"
     for _,v in ipairs(CurrentMacro) do
-        s = s .. string.format("    {%d, '%s', '%s', %d, %s},\n", v[1], v[2], v[3], v[4],
-            type(v[5])=="table" and "Vector3.new("..v[5][1]..","..v[5][2]..","..v[5][3]..")" or "'"..v[5].."'")
+        local valueStr
+        if type(v[5]) == "table" then
+            valueStr = string.format("Vector3.new(%.2f, %.2f, %.2f)", v[5][1], v[5][2], v[5][3])
+        else
+            valueStr = "'" .. v[5] .. "'"
+        end
+        s = s .. string.format("    {%d, '%s', '%s', %d, %s},\n", v[1], v[2], v[3], v[4], valueStr)
     end
-    writefile(ConfigFolder.."/"..(RN~="" and RN or "未命名")..".json", s.."}\nreturn ActionPlan")
+    s = s .. "}\nreturn ActionPlan"
+    
+    writefile(ConfigFolder.."/"..(RN~="" and RN or "未命名")..".json", s)
 
     return result or OldNC(self, ...)
 end)
@@ -411,10 +459,12 @@ end)
 -- 10. 启动加载
 if Options.SelectedFile ~= "" then
     local p = ConfigFolder.."/"..Options.SelectedFile..".json"
-    if isfile(p) then ActivePlan = ParseMacro(readfile(p)); CheckAbilityInPlan() end
+    if isfile(p) then
+        ActivePlan = ParseMacro(readfile(p))
+        CheckAbilityInPlan()
+    end
 end
 
--- ★ 修复跨服重开只能生效一次的问题
 if Options.AutoRejoin then
     setupAutoRejoin()
 end
