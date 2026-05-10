@@ -240,7 +240,7 @@ TabSet:CreateToggle({Name = "自动准备", CurrentValue = Options.AutoReady, Ca
 TabSet:CreateToggle({Name = "自动重新开始", CurrentValue = Options.AutoRestart, Callback = function(v) Options.AutoRestart = v Save() end})
 
 TabSet:CreateToggle({
-    Name = "自动执行",
+    Name = "自动执行(不稳定，建议使用注入器自带的)",
     CurrentValue = Options.AutoRejoin,
     Callback = function(v)
         Options.AutoRejoin = v
