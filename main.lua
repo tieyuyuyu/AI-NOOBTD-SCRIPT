@@ -349,8 +349,8 @@ task.spawn(function()
                 Rayfield:Notify({Title = "状态", Content = "开始了，配置中...", Duration = 3})
                 task.wait(2)
                 local speedParam = nil
-                if Options.SpeedMode == "二倍速" then speedParam = 1
-                elseif Options.SpeedMode == "三倍速" then speedParam = 2 end
+                if Options.SpeedMode == "二倍速" then speedParam = 2
+                elseif Options.SpeedMode == "三倍速" then speedParam = 3 end
                 if speedParam then
                     pcall(function() ReplicatedStorage.Remotes.Events.InitChangeSpeed:FireServer(speedParam) end)
                     Rayfield:Notify({Title = "状态", Content = "已开启 "..Options.SpeedMode, Duration = 2})
