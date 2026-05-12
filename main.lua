@@ -193,8 +193,8 @@ end)
 
 -- 7. UI
 local Window = Rayfield:CreateWindow({
-   Name = "Noob TD",
-   LoadingTitle = "正在加载 " .. PlayerName,
+   Name = "Noob TD(本脚本完全免费)",
+   LoadingTitle = "正在加载(本脚本完全免费) " .. PlayerName,
    ConfigurationSaving = { Enabled = false }
 })
 
